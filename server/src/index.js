@@ -99,6 +99,26 @@ app.get('/api/health/db', async (req, res) => {
   }
 })
 
+// Optional C++ Crow Microservice Health Proxy
+app.get('/api/crow-health', async (req, res) => {
+  try {
+    const crowUrl = process.env.CROW_SERVICE_URL || 'http://crow:8080'
+    const crowRes = await fetch(`${crowUrl}/health`, { signal: AbortSignal.timeout(1500) })
+    const crowData = await crowRes.json()
+    return res.status(200).json({
+      status: 'ok',
+      bonus: 'C++ Crow Microservice is operational',
+      data: crowData
+    })
+  } catch {
+    return res.status(200).json({
+      status: 'offline',
+      service: 'crow-microservice',
+      message: 'Optional C++ Crow microservice is not running. Launch it with: docker compose --profile bonus up crow or cd bonus/crow-service'
+    })
+  }
+})
+
 // ----------------------------------------------------
 // API Route Modules
 // ----------------------------------------------------

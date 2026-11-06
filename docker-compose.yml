@@ -102,6 +102,23 @@ services:
     networks:
       - borrowbox-network
 
+  # ----------------------------------------------------
+  # 5. Optional Bonus: C++ Crow Microservice
+  # ----------------------------------------------------
+  crow:
+    build:
+      context: ./bonus/crow-service
+      dockerfile: Dockerfile
+    container_name: borrowbox-crow
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    profiles:
+      - bonus
+      - all
+    networks:
+      - borrowbox-network
+
 # ----------------------------------------------------
 # Persistent Storage Volumes
 # ----------------------------------------------------
