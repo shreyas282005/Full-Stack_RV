@@ -16,6 +16,7 @@
 | **Phase 3B** | Complete React Frontend Development & Integration | **Completed** ✅ |
 | **Phase 4** | Redis Caching & Socket.IO Real-Time Integration | **Completed** ✅ |
 | **Phase 5** | Containerization, Evaluator Experience & GitHub Submission | **Completed** ✅ |
+| **Phase 6** | CI/CD Pipeline (Jenkins Declarative Pipeline) & Dual Assignment Audit | **Completed** ✅ |
 | **Bonus** | C++20 Crow High-Performance Health Microservice | **Completed** ✅ |
 
 ---
@@ -176,7 +177,27 @@
 
 ---
 
-## 🧪 Verification Log (Step 5 - Final)
+## ✅ Phase 6: CI/CD Pipeline (Jenkins Declarative Pipeline) & Dual Assignment Audit (Completed)
+
+- [x] **Declarative Jenkinsfile (`Jenkinsfile`):**
+  - **Stage 1 (Checkout):** Automatic source checkout using `checkout scm` and Git commit SHA resolution.
+  - **Stage 2 (Build):** Validates Docker CLI availability and builds Docker images using `docker compose build`.
+  - **Stage 3 (Deploy):** Deploys locally to configurable predefined path (`DEPLOY_DIR` defaulting to `/opt/borrowbox` or `./deploy`), copies application definitions, performs graceful zero-downtime container recreation (`docker compose down --remove-orphans && docker compose up -d --build`), and executes container health verification.
+  - **Persistent Volumes:** Preserves PostgreSQL database volume (`borrowbox_postgres_data`) across deployments.
+  - **Post-Build Actions:** Comprehensive notifications and execution logs for `always`, `success`, and `failure` states.
+- [x] **Dual Internship Assignment Compliance:**
+  - **Assignment 1 (Full-Stack):** React 19 + Node.js Express ESM + PostgreSQL 16 (Prisma ORM) + Redis 7 caching + Socket.IO WebSockets + Optional C++20 Crow microservice.
+  - **Assignment 2 (DevOps):** Multi-stage Dockerfiles + `docker-compose.yml` with health checks and network isolation + 3-stage declarative `Jenkinsfile` deploying locally to a predefined path + 20-section comprehensive `README.md`.
+- [x] **Docker Compose Profile Configuration:**
+  - Standard stack: `postgres`, `redis`, `server`, `client`.
+  - Bonus microservice: `crow` activated cleanly with `--profile bonus` or `--profile all`.
+- [x] **Repository Audit & Documentation:**
+  - 20-section `README.md` with complete installation, architecture, demo credentials, 2-browser testing, troubleshooting, and CI/CD walkthrough.
+  - Complete REST and WebSocket documentation in `docs/API.md`.
+
+---
+
+## 🧪 Verification Log (Final)
 
 | Target / Workflow | Test Performed | Expected Result | Observed Result | Status |
 |---|---|---|---|:---:|
