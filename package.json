@@ -1,0 +1,19 @@
+{
+  "name": "borrowbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BorrowBox - Community-powered borrowing platform. Borrow More. Own Less.",
+  "scripts": {
+    "dev": "concurrently -n \"server,client\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "test:api": "npm --prefix server run test:api",
+    "test:step4": "npm --prefix server run test:step4",
+    "test": "npm --prefix server run test",
+    "build:client": "npm --prefix client run build",
+    "start:server": "npm --prefix server start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

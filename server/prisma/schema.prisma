@@ -1,0 +1,143 @@
+// Prisma schema for BorrowBox
+// Tagline: "Borrow More. Own Less."
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------
+// Enums
+// ----------------------------------------------------
+
+enum BorrowStatus {
+  PENDING
+  APPROVED
+  ACTIVE
+  RETURNED
+  REJECTED
+  CANCELLED
+}
+
+enum ItemStatus {
+  AVAILABLE
+  BORROWED
+  MAINTENANCE
+  UNAVAILABLE
+}
+
+enum ItemCategory {
+  TOOLS
+  ELECTRONICS
+  HOME_APPLIANCES
+  OUTDOORS_CAMPING
+  BOOKS_MEDIA
+  GARDENING
+  SPORTS_FITNESS
+  PARTY_GAMES
+  OTHER
+}
+
+enum NotificationType {
+  BORROW_REQUEST
+  REQUEST_APPROVED
+  REQUEST_REJECTED
+  BORROW_ACTIVE
+  ITEM_RETURNED
+  REQUEST_CANCELLED
+  SYSTEM
+}
+
+// ----------------------------------------------------
+// Models
+// ----------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  locality     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  items            Item[]          @relation("UserItems")
+  borrowRequests   BorrowRequest[] @relation("BorrowerRequests")
+  receivedRequests BorrowRequest[] @relation("OwnerRequests")
+  notifications    Notification[]
+
+  @@map("users")
+}
+
+model Item {
+  id          String       @id @default(uuid())
+  title       String
+  description String
+  category    ItemCategory @default(OTHER)
+  imageUrl    String?
+  status      ItemStatus   @default(AVAILABLE)
+  ownerId     String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  owner          User            @relation("UserItems", fields: [ownerId], references: [id], onDelete: Cascade)
+  borrowRequests BorrowRequest[]
+
+  // Indexes for query optimization
+  @@index([ownerId])
+  @@index([status])
+  @@index([category])
+  @@map("items")
+}
+
+model BorrowRequest {
+  id         String       @id @default(uuid())
+  itemId     String
+  borrowerId String
+  ownerId    String
+  startDate  DateTime
+  endDate    DateTime
+  status     BorrowStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  // Relations
+  item     Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  borrower User @relation("BorrowerRequests", fields: [borrowerId], references: [id], onDelete: Cascade)
+  owner    User @relation("OwnerRequests", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Indexes for querying requests and overlap detection
+  @@index([itemId])
+  @@index([borrowerId])
+  @@index([ownerId])
+  @@index([status])
+  // Compound index designed to optimize overlapping booking queries:
+  // WHERE itemId = :id AND status IN ('APPROVED', 'ACTIVE') AND startDate <= :reqEnd AND endDate >= :reqStart
+  @@index([itemId, status, startDate, endDate])
+  @@map("borrow_requests")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes for fast fetching of unread notifications by user
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
