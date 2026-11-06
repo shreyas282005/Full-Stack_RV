@@ -14,6 +14,7 @@ RUN npm install
 COPY prisma ./prisma/
 
 # Generate Prisma Client binary bindings
+ENV DATABASE_URL="postgresql://postgres:postgres@postgres:5432/borrowbox_dev?schema=public"
 RUN npx prisma generate
 
 # Copy application source code and entrypoint
@@ -36,3 +37,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=5 \
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "src/index.js"]
+

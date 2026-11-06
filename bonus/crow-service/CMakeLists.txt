@@ -16,3 +16,4 @@ FetchContent_MakeAvailable(Crow)
 
 add_executable(crow_health_service main.cpp)
 target_link_libraries(crow_health_service PRIVATE Crow::Crow)
+

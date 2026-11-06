@@ -37,3 +37,4 @@ node prisma/seed.js
 
 echo "🚀 Launching BorrowBox Express & Socket.IO server..."
 exec "$@"
+
