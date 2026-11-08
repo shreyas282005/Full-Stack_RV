@@ -6,6 +6,22 @@ BorrowBox is a community-powered resource borrowing and lending platform where n
 
 ---
 
+> [!IMPORTANT]
+> ### ⚡ Quick Start for Evaluators & Reviewers (One-Command Startup)
+> Ensure **Docker Desktop** is running, open a terminal in the project root, and execute:
+> ```bash
+> docker compose up --build
+> ```
+> 
+> - 🌐 **Web Application:** [http://localhost:3000](http://localhost:3000) (Production Nginx SPA)
+> - 🔌 **REST API & Gateway:** [http://localhost:5000/api/health](http://localhost:5000/api/health)
+> - 👤 **Instant 1-Click Demo Personas:** Click any persona on the `/login` page (*Alice*, *Bob*, *Charlie*, *Dana*) — or login with password `BorrowBox123!`.
+> - 🎁 **Optional C++ Crow Microservice:** `docker compose --profile bonus up --build` ➔ [http://localhost:8080/health](http://localhost:8080/health) or [http://localhost:5000/api/crow-health](http://localhost:5000/api/crow-health)
+> 
+> *The backend container automatically polls PostgreSQL, applies Prisma migrations, and seeds 4 demo personas, 20 catalog items, and active borrow workflows idempotently.*
+
+---
+
 ## 📑 Table of Contents
 
 1. [Project Title and Description](#1-project-title-and-description)
