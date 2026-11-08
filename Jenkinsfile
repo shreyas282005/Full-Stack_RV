@@ -15,8 +15,11 @@ pipeline {
         // PREDEFINED LOCAL DEPLOYMENT PATH CONFIGURATION
         // =========================================================================
         // Configurable target deployment directory on the machine running Jenkins.
-        // Can be overridden via Jenkins Job parameters or system environment variables.
-        // Default fallback: /opt/borrowbox (Linux/macOS) or ./deploy (Local/Windows)
+        // In Jenkins, configure this via:
+        //   1. Job Configuration -> "This project is parameterized" -> String Parameter PREDEFINED_DEPLOY_PATH
+        //   2. Or System Environment Variable PREDEFINED_DEPLOY_PATH on the Jenkins agent
+        // The fallback path (/opt/borrowbox on Linux or WORKSPACE/deploy on Windows)
+        // is a local placeholder for testing and NOT an official company path.
         DEPLOY_DIR = "${env.PREDEFINED_DEPLOY_PATH ?: (isUnix() ? '/opt/borrowbox' : "${WORKSPACE}/deploy")}"
         COMPOSE_PROJECT_NAME = 'borrowbox'
         DOCKER_COMPOSE_CMD = 'docker compose'
@@ -51,23 +54,23 @@ pipeline {
                 echo "=========================================================="
                 script {
                     if (isUnix()) {
-                        sh """
+                        sh '''
                             echo "Verifying Docker CLI availability..."
                             docker --version
                             ${DOCKER_COMPOSE_CMD} version
 
                             echo "Building Docker Compose service images..."
                             ${DOCKER_COMPOSE_CMD} build
-                        """
+                        '''
                     } else {
-                        bat """
+                        bat '''
                             @echo Verifying Docker CLI availability...
                             docker --version
                             %DOCKER_COMPOSE_CMD% version
 
                             @echo Building Docker Compose service images...
                             %DOCKER_COMPOSE_CMD% build
-                        """
+                        '''
                     }
                 }
             }
@@ -84,45 +87,139 @@ pipeline {
                 echo "=========================================================="
                 script {
                     if (isUnix()) {
-                        sh """
+                        sh '''
+                            set -e
                             # 1. Create target deployment directory if it does not exist
                             mkdir -p "${DEPLOY_DIR}"
 
-                            # 2. Copy deployment configuration and application directories
-                            # Preserving existing data, database volumes, and runtime state
-                            cp -R docker-compose.yml server client bonus "${DEPLOY_DIR}/" || rsync -av --exclude='.git' --exclude='node_modules' ./ "${DEPLOY_DIR}/"
+                            # 2. Safe file transfer: preserve Dockerfiles, compose, source, configs,
+                            #    Prisma migrations & seed, while strictly excluding secrets (.env),
+                            #    node_modules, .git, and local build artifacts.
+                            echo "Copying deployment files safely to ${DEPLOY_DIR}..."
+                            tar --exclude='node_modules' \
+                                --exclude='.env' \
+                                --exclude='.env.*' \
+                                --exclude='.git' \
+                                --exclude='dist' \
+                                --exclude='build' \
+                                -cf - docker-compose.yml server client bonus | (cd "${DEPLOY_DIR}" && tar -xf -)
 
-                            # 3. Enter target directory
                             cd "${DEPLOY_DIR}"
 
-                            # 4. Gracefully restart services (preserves named volume borrowbox_postgres_data)
+                            # 3. Gracefully stop existing containers without deleting PostgreSQL volume
+                            echo "Stopping previous containers (preserving database volume)..."
                             ${DOCKER_COMPOSE_CMD} down --remove-orphans || true
-                            ${DOCKER_COMPOSE_CMD} up -d --build
 
-                            # 5. Display container status and verify health
-                            sleep 10
-                            ${DOCKER_COMPOSE_CMD} ps
-                        """
+                            # 4. Launch containers using images already built in Stage 2 (no unnecessary rebuild)
+                            echo "Starting services with pre-built images..."
+                            ${DOCKER_COMPOSE_CMD} up -d
+
+                            # 5. Rigorous Health Verification Loop (120s timeout)
+                            # Checks actual container health using docker inspect
+                            echo "Waiting for services to become healthy (Timeout: 120s)..."
+                            SERVICES="borrowbox-postgres borrowbox-redis borrowbox-server borrowbox-client"
+                            TIMEOUT=120
+                            ELAPSED=0
+                            INTERVAL=5
+                            ALL_HEALTHY=false
+
+                            while [ $ELAPSED -lt $TIMEOUT ]; do
+                                ALL_HEALTHY=true
+                                for svc in $SERVICES; do
+                                    STATUS=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$svc" 2>/dev/null || echo "not_found")
+                                    if [ "$STATUS" != "healthy" ]; then
+                                        ALL_HEALTHY=false
+                                        echo "Waiting for $svc... Current status: $STATUS (${ELAPSED}s elapsed)"
+                                        break
+                                    fi
+                                done
+
+                                if [ "$ALL_HEALTHY" = "true" ]; then
+                                    echo "=========================================================="
+                                    echo "✅ All required services are healthy and operational!"
+                                    echo "=========================================================="
+                                    ${DOCKER_COMPOSE_CMD} ps
+                                    break
+                                fi
+
+                                sleep $INTERVAL
+                                ELAPSED=$((ELAPSED + INTERVAL))
+                            done
+
+                            if [ "$ALL_HEALTHY" != "true" ]; then
+                                echo "❌ [DEPLOYMENT ERROR] Health verification timed out after ${TIMEOUT}s."
+                                echo "Container status overview:"
+                                ${DOCKER_COMPOSE_CMD} ps -a
+                                echo "--- Server Diagnostics Logs ---"
+                                docker logs --tail 50 borrowbox-server 2>&1 || true
+                                echo "--- Client Diagnostics Logs ---"
+                                docker logs --tail 50 borrowbox-client 2>&1 || true
+                                echo "--- Postgres Diagnostics Logs ---"
+                                docker logs --tail 50 borrowbox-postgres 2>&1 || true
+                                echo "--- Redis Diagnostics Logs ---"
+                                docker logs --tail 50 borrowbox-redis 2>&1 || true
+                                exit 1
+                            fi
+                        '''
                     } else {
-                        bat """
-                            @echo Creating deployment directory...
-                            if not exist "%DEPLOY_DIR%" mkdir "%DEPLOY_DIR%"
+                        bat '''
+                            @echo off
+                            setlocal enabledelayedexpansion
 
-                            @echo Copying deployment files to predefined directory...
-                            xcopy /E /I /Y /Q server "%DEPLOY_DIR%\\server"
-                            xcopy /E /I /Y /Q client "%DEPLOY_DIR%\\client"
-                            xcopy /E /I /Y /Q bonus "%DEPLOY_DIR%\\bonus"
-                            copy /Y docker-compose.yml "%DEPLOY_DIR%\\docker-compose.yml"
+                            echo Creating deployment directory: %DEPLOY_DIR%
+                            if not exist "%DEPLOY_DIR%" mkdir "%DEPLOY_DIR%"
+                            if !ERRORLEVEL! NEQ 0 (
+                                echo [ERROR] Failed to create deployment directory: %DEPLOY_DIR%
+                                exit /b 1
+                            )
+
+                            echo Copying docker-compose.yml...
+                            copy /Y docker-compose.yml "%DEPLOY_DIR%\\docker-compose.yml" >nul
+                            if !ERRORLEVEL! NEQ 0 (
+                                echo [ERROR] Failed to copy docker-compose.yml
+                                exit /b 1
+                            )
+
+                            echo Copying server files (excluding node_modules, .env, .git)...
+                            robocopy server "%DEPLOY_DIR%\\server" /E /XD node_modules .git dist /XF .env .env.* /NFL /NDL /NJH /NJS /nc /ns /np
+                            if !ERRORLEVEL! GEQ 8 (
+                                echo [ERROR] Robocopy failed for server directory with code !ERRORLEVEL!
+                                exit /b 1
+                            )
+
+                            echo Copying client files (excluding node_modules, .env, dist, .git)...
+                            robocopy client "%DEPLOY_DIR%\\client" /E /XD node_modules .git dist /XF .env .env.* /NFL /NDL /NJH /NJS /nc /ns /np
+                            if !ERRORLEVEL! GEQ 8 (
+                                echo [ERROR] Robocopy failed for client directory with code !ERRORLEVEL!
+                                exit /b 1
+                            )
+
+                            echo Copying bonus files (excluding build, .env, .git)...
+                            robocopy bonus "%DEPLOY_DIR%\\bonus" /E /XD build .git /XF .env .env.* /NFL /NDL /NJH /NJS /nc /ns /np
+                            if !ERRORLEVEL! GEQ 8 (
+                                echo [ERROR] Robocopy failed for bonus directory with code !ERRORLEVEL!
+                                exit /b 1
+                            )
 
                             cd /d "%DEPLOY_DIR%"
 
-                            @echo Starting application containers in background...
-                            %DOCKER_COMPOSE_CMD% down --remove-orphans || rem
-                            %DOCKER_COMPOSE_CMD% up -d --build
+                            echo Stopping previous containers (preserving database volume)...
+                            %DOCKER_COMPOSE_CMD% down --remove-orphans
 
-                            @echo Verifying container status...
-                            %DOCKER_COMPOSE_CMD% ps
-                        """
+                            echo Starting services with pre-built images (no rebuild)...
+                            %DOCKER_COMPOSE_CMD% up -d
+                            if !ERRORLEVEL! NEQ 0 (
+                                echo [ERROR] Docker compose up failed with code !ERRORLEVEL!
+                                exit /b 1
+                            )
+
+                            echo Verifying container health status (Timeout: 120s)...
+                            powershell -NoProfile -ExecutionPolicy Bypass -Command "$services = @('borrowbox-postgres', 'borrowbox-redis', 'borrowbox-server', 'borrowbox-client'); $timeout = 120; $elapsed = 0; $interval = 5; $allHealthy = $false; while ($elapsed -lt $timeout) { $pending = @(); foreach ($svc in $services) { $st = (docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' $svc 2>$null); if ($st -ne 'healthy') { $pending += \"$svc ($st)\" } }; if ($pending.Count -eq 0) { $allHealthy = $true; Write-Host '=========================================================='; Write-Host 'All required services are healthy and operational!'; Write-Host '=========================================================='; docker compose ps; break }; Write-Host \"Waiting for: $($pending -join ', ') (${elapsed}s elapsed)...\"; Start-Sleep -Seconds $interval; $elapsed += $interval }; if (-not $allHealthy) { Write-Error 'DEPLOYMENT HEALTH CHECK FAILED: Containers did not become healthy within 120s'; docker compose ps -a; Write-Host '--- Server Logs ---'; docker logs --tail 50 borrowbox-server; Write-Host '--- Client Logs ---'; docker logs --tail 50 borrowbox-client; exit 1 }"
+                            if !ERRORLEVEL! NEQ 0 (
+                                echo [ERROR] Health verification failed.
+                                exit /b 1
+                            )
+                        '''
                     }
                 }
             }

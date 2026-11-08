@@ -46,7 +46,7 @@ Every year, households spend thousands of dollars purchasing power tools, campin
 
 ### The Solution: BorrowBox
 BorrowBox transforms neighborhood communities into cooperative sharing networks:
-- **Collision-Free Date Reservations:** A state machine backed by PostgreSQL interactive serializable transactions guarantees that two borrowers cannot book overlapping dates for the same item.
+- **Collision-Free Date Reservations:** A state machine backed by PostgreSQL interactive transactions with collision-check locking guarantees that two borrowers cannot book overlapping dates for the same item (responding with `409 Conflict`).
 - **Instant Real-Time Communication:** Real-time push updates via Socket.IO notify owners and borrowers immediately when requests are submitted, approved, handed over, or returned.
 - **High-Performance Scalability:** Multi-tiered query caching with Redis ensures instant catalog searching with automated cache invalidation upon any listing change, falling back to PostgreSQL if Redis is offline.
 - **Zero-Friction Evaluation:** Pre-seeded demo personas with one-click logins allow evaluators to test all user roles immediately with zero setup.
@@ -311,10 +311,14 @@ flowchart LR
 ```
 
 ### Key Principles:
-- **Declarative Pipeline:** Structured using standard Jenkins syntax with clear stage separation.
-- **Configurable Deployment Path:** Uses the `PREDEFINED_DEPLOY_PATH` environment variable (defaulting to `/opt/borrowbox` on Linux or `${WORKSPACE}/deploy` on Windows).
-- **Data Preservation:** Executes non-destructive restarts (`docker compose down --remove-orphans` followed by `docker compose up -d --build`) preserving the named volume `borrowbox_postgres_data`.
-- **Zero Secret Exposure:** Credentials are never hardcoded in scripts or printed in console logs.
+- **Declarative Pipeline:** Structured using standard declarative Jenkins syntax (`pipeline { agent any ... }`) with strict stage isolation.
+- **Configurable Deployment Path:** Uses the `PREDEFINED_DEPLOY_PATH` environment variable. Evaluators or deployment engineers configure this parameter in Jenkins to target any predefined directory.
+  > [!NOTE]
+  > The pipeline default (`/opt/borrowbox` on Linux or `${WORKSPACE}/deploy` on Windows) is a local fallback placeholder for independent testing, **not** an official company-mandated directory. The deployment target must be configured via `PREDEFINED_DEPLOY_PATH` once specified by the evaluator.
+- **Avoid Unnecessary Rebuilds:** Images are compiled once during Stage 2 (`docker compose build`). Stage 3 (`Deploy`) executes `docker compose up -d` with the pre-built images without redundant `--build` flags.
+- **Safe File Copying:** Synchronizes essential runtime definitions (`docker-compose.yml`, `server`, `client`, `bonus`, Prisma migrations & seed) while strictly excluding secrets (`.env`), `node_modules`, `.git`, and local build artifacts (`dist`, `build`). Copy failures are treated as fatal errors.
+- **Data Volume Preservation:** Gracefully restarts services using `docker compose down --remove-orphans` without the `-v` flag, ensuring the PostgreSQL named volume (`borrowbox_postgres_data`) and Redis volume (`borrowbox_redis_data`) remain intact across redeployments.
+- **Active Health Verification:** Instead of assuming success from `docker compose ps`, the pipeline executes an active 120-second polling loop inspecting the live health status (`docker inspect`) of `borrowbox-postgres`, `borrowbox-redis`, `borrowbox-server`, and `borrowbox-client`. If any container is unhealthy or times out, the pipeline fails and dumps diagnostic container logs.
 
 ---
 
@@ -322,47 +326,105 @@ flowchart LR
 
 ### Stage 1: Checkout
 - **Purpose:** Retrieves the latest revision of the codebase from the Git repository.
-- **Implementation:** Executes `checkout scm` using Jenkins' native Git plugin.
-- **Telemetry:** Logs the checked-out commit hash (`git rev-parse --short HEAD`).
+- **Implementation:** Executes `checkout scm` using Jenkins' native SCM step.
+- **Telemetry:** Resolves and outputs the checked-out commit SHA (`git rev-parse --short HEAD`) to the pipeline build log.
 
 ### Stage 2: Build
-- **Purpose:** Validates Docker availability and builds container images.
-- **Implementation:** Executes `docker compose build` to construct all production images (`server`, `client`, and dependencies) without starting services.
+- **Purpose:** Verifies Docker engine / CLI availability and builds production container images.
+- **Implementation:** Executes `docker compose build` to compile the multi-stage frontend Nginx container and backend Node.js container with Prisma bindings.
 
 ### Stage 3: Deploy
-- **Purpose:** Deploys the application locally to the predefined target directory.
+- **Purpose:** Deploys the containerized application locally to the configured predefined path.
 - **Implementation:**
-  1. Creates the target directory if not present: `mkdir -p "${DEPLOY_DIR}"`.
-  2. Copies configuration files (`docker-compose.yml`, `server/`, `client/`, `bonus/`) to the deployment path while excluding development artifacts (`.git`, `node_modules`).
-  3. Launches containers in detached mode: `docker compose up -d --build`.
-  4. Waits for health checks to pass and logs container statuses (`docker compose ps`).
+  1. **Directory Creation:** Ensures the destination directory exists (`mkdir -p "${DEPLOY_DIR}"`).
+  2. **Safe File Transfer:**
+     - *Linux / macOS:* Streams required directories via `tar` with explicit exclusion flags (`--exclude='node_modules' --exclude='.env*' --exclude='.git' --exclude='dist' --exclude='build'`).
+     - *Windows:* Uses Windows native `robocopy` with `/XD node_modules .git dist` and `/XF .env .env.*`, checking error levels (`if !ERRORLEVEL! GEQ 8 exit /b 1`).
+  3. **Zero-Data-Loss Shutdown:** Executes `docker compose down --remove-orphans` in the target directory (volumes preserved).
+  4. **Container Launch:** Starts all services in detached mode with pre-built images (`docker compose up -d`).
+  5. **120-Second Health Polling Loop:**
+     - Polls `docker inspect --format '{{.State.Health.Status}}'` every 5 seconds for `borrowbox-postgres`, `borrowbox-redis`, `borrowbox-server`, and `borrowbox-client`.
+     - Confirms that all services reach `healthy` status.
+     - If the timeout expires or a service enters an unhealthy state, the pipeline immediately halts with exit code 1 and outputs container status and recent diagnostics logs (`docker logs --tail 50`).
 
 ---
 
 ## 17. Jenkins Setup and Configuration
 
-To configure BorrowBox in a local Jenkins instance:
+Follow these step-by-step instructions to run the pipeline locally or on a CI/CD server:
 
-1. **Install Prerequisites in Jenkins:**
-   - Install the **Git Plugin**, **Docker Pipeline Plugin**, and **Pipeline Utility Steps** via *Manage Jenkins ➔ Plugins*.
-   - Ensure the `jenkins` user has permissions to run Docker commands:
+### Option A: Running Jenkins Locally via Docker (Beginner-Friendly)
+
+If Jenkins is not already installed on your machine, launch an official Jenkins LTS container with Docker socket access:
+
+1. **Start Jenkins Container:**
+   - *Linux / macOS:*
      ```bash
-     sudo usermod -aG docker jenkins
-     sudo systemctl restart jenkins
+     docker run -d \
+       --name jenkins-borrowbox \
+       -p 8080:8080 \
+       -p 50000:50000 \
+       -v jenkins_home:/var/jenkins_home \
+       -v /var/run/docker.sock:/var/run/docker.sock \
+       jenkins/jenkins:lts
      ```
-2. **Create New Pipeline Job:**
-   - In Jenkins, select **New Item** ➔ enter `borrowbox-pipeline` ➔ select **Pipeline** ➔ click **OK**.
-3. **Configure Pipeline from SCM:**
-   - In the job configuration, scroll to **Pipeline** ➔ select **Pipeline script from SCM**.
-   - SCM: **Git**
-   - Repository URL: your repository clone URL (e.g., `https://github.com/your-username/borrowbox.git`).
-   - Script Path: `Jenkinsfile`.
-4. **Configure Predefined Deployment Path (Optional):**
-   - Under **This project is parameterized** (or in *Manage Jenkins ➔ Configure System*), define an environment variable:
-     - Name: `PREDEFINED_DEPLOY_PATH`
-     - Value: `/opt/borrowbox` (or your preferred local deployment directory).
-5. **Run the Pipeline:**
-   - Click **Build Now**. The pipeline will execute Checkout, Build, and Deploy sequentially.
+   - *Windows (Docker Desktop):*
+     ```powershell
+     docker run -d `
+       --name jenkins-borrowbox `
+       -p 8080:8080 `
+       -p 50000:50000 `
+       -v jenkins_home:/var/jenkins_home `
+       -v //var/run/docker.sock:/var/run/docker.sock `
+       jenkins/jenkins:lts
+     ```
+
+2. **Retrieve Initial Admin Password:**
+   ```bash
+   docker exec jenkins-borrowbox cat /var/jenkins_home/secrets/initialAdminPassword
+   ```
+
+3. **Complete Initial Setup:**
+   - Open [http://localhost:8080](http://localhost:8080) in your browser.
+   - Paste the admin password and select **"Install suggested plugins"**.
+   - Create your administrator account.
+
+4. **Ensure Docker CLI is Available inside the Jenkins Container:**
+   ```bash
+   docker exec -u 0 jenkins-borrowbox apt-get update
+   docker exec -u 0 jenkins-borrowbox apt-get install -y docker.io docker-compose-v2
+   docker exec -u 0 jenkins-borrowbox usermod -aG docker jenkins
+   docker restart jenkins-borrowbox
+   ```
+
+---
+
+### Option B: Creating the Pipeline Job in Jenkins
+
+1. **Create New Item:**
+   - On the Jenkins dashboard, click **"New Item"**.
+   - Enter `borrowbox-pipeline`, select **"Pipeline"**, and click **OK**.
+
+2. **Configure General & Parameters:**
+   - Check **"This project is parameterized"**.
+   - Click **"Add Parameter"** ➔ select **"String Parameter"**.
+     - **Name:** `PREDEFINED_DEPLOY_PATH`
+     - **Default Value:** `/opt/borrowbox` (or your local directory, e.g. `./deploy`)
+     - **Description:** Predefined local deployment directory for BorrowBox container deployment.
+
+3. **Configure Pipeline Script from SCM:**
+   - Scroll down to the **Pipeline** section.
+   - **Definition:** Select `Pipeline script from SCM`.
+   - **SCM:** Select `Git`.
+   - **Repository URL:** Enter your GitHub repository URL (e.g. `https://github.com/your-username/borrowbox.git`).
+   - **Credentials:** Add your GitHub personal access token (PAT) or SSH key if the repository is private.
+   - **Branch Specifier:** `*/master` (or `*/main`).
+   - **Script Path:** `Jenkinsfile`.
+
+4. **Execute and Inspect the Pipeline:**
+   - Click **"Save"**.
+   - Click **"Build with Parameters"** (verify or adjust `PREDEFINED_DEPLOY_PATH`) ➔ click **"Build"**.
+   - Inspect the build in real-time under **Stage View** or click on the build number ➔ **"Console Output"** to view Checkout, Build, and Deploy execution logs.
 
 ---
 
