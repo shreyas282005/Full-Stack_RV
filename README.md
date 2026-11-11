@@ -53,6 +53,21 @@ BorrowBox is a community-powered resource borrowing and lending platform where n
 
 The application allows verified local neighbors to publish items across 8 categories, browse available equipment, request borrowing periods with collision-free scheduling, coordinate handovers via real-time WebSocket notifications, and track item statuses throughout their entire lifecycle.
 
+### 🚀 How to Run (Quick Reviewer Guide)
+
+Ensure **Docker Desktop** is running, then execute in the project root:
+
+```bash
+docker compose up --build
+```
+
+- 🌐 **Frontend Application:** [http://localhost:3000](http://localhost:3000) (Production Nginx SPA)
+- 🔌 **Backend REST API:** [http://localhost:5000/api/health](http://localhost:5000/api/health)
+- 👤 **Instant Demo Login:** Navigate to `/login` and click any demo persona card (*Alice*, *Bob*, *Charlie*, *Dana*) to log in with 1 click. Password for manual login: `BorrowBox123!`
+- 🎁 **Bonus C++ Crow Service:** `docker compose --profile bonus up --build` (accessible on port 8080)
+
+*(Containers automatically poll PostgreSQL, apply Prisma migrations, and seed sample data idempotently without manual database commands.)*
+
 ---
 
 ## 2. Problem Statement and Solution
