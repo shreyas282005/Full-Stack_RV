@@ -461,9 +461,15 @@ If Jenkins is not already installed on your machine, launch an official Jenkins 
 
 ## 18. Troubleshooting
 
-### 1. Docker Desktop Not Running
-- **Symptom:** `Cannot connect to the Docker daemon` or `docker: command not found`.
-- **Solution:** Open Docker Desktop from your operating system applications menu. Wait until the whale icon in the taskbar becomes steady.
+### 1. Docker Daemon or CLI Not Found in Terminal
+- **Symptom:** `docker : The term 'docker' is not recognized` or `Cannot connect to the Docker daemon`.
+- **Solution:**
+  1. Open **Docker Desktop** from your Windows Start Menu and ensure the status in the bottom-left shows *"Engine running"*.
+  2. If Docker was recently installed and your current PowerShell window does not recognize `docker`, reload the PATH in your current terminal session:
+     ```powershell
+     $env:PATH += ";$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin;C:\Program Files\Docker\Docker\resources\bin"
+     ```
+     *(Alternatively, restart your PowerShell terminal or VS Code window to pick up the updated system PATH.)*
 
 ### 2. Port 3000, 5000, or 5432 Already Occupied
 - **Symptom:** `Bind for 0.0.0.0:3000 failed: port is already allocated`.
