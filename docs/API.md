@@ -6,7 +6,7 @@
 
 ---
 
-## 🔐 Authentication
+## Authentication
 
 BorrowBox uses **JWT (JSON Web Token)** authentication.
 Protected endpoints require an `Authorization` header formatted as:
@@ -21,7 +21,7 @@ Passwords are never exposed in any API response.
 
 ---
 
-## 📦 Response Format
+## Response Format
 
 ### Success Response
 ```json

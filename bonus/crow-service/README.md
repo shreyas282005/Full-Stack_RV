@@ -5,7 +5,7 @@
 
 ---
 
-## 🌟 Overview
+## Overview
 
 This microservice demonstrates how BorrowBox can integrate specialized native C++ high-throughput services for compute-intensive tasks, health telemetry, or IoT device gateways without impacting the primary application architecture.
 
@@ -15,7 +15,7 @@ This microservice demonstrates how BorrowBox can integrate specialized native C+
 
 ---
 
-## 🚀 Endpoints
+## Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -25,7 +25,7 @@ This microservice demonstrates how BorrowBox can integrate specialized native C+
 
 ---
 
-## 🛠️ Building & Running Independently
+## Building and Running Independently
 
 ### Option A: Using Docker
 ```bash
